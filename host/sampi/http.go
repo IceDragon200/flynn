@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/julienschmidt/httprouter"
+	"github.com/flynn/flynn/Godeps/_workspace/src/golang.org/x/net/context"
 	log "github.com/flynn/flynn/Godeps/_workspace/src/gopkg.in/inconshreveable/log15.v2"
 	"github.com/flynn/flynn/host/types"
 	"github.com/flynn/flynn/pkg/httphelper"
@@ -104,7 +105,7 @@ func startJSONEventStreaming(w http.ResponseWriter) *json.Encoder {
 }
 
 // HTTP Route Handles
-func (c *HTTPAPI) ListHosts(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func (c *HTTPAPI) ListHosts(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	l := c.logger.New("fn", "ListHosts")
 	ret, err := c.Cluster.ListHosts()
 	if err != nil {
@@ -116,7 +117,7 @@ func (c *HTTPAPI) ListHosts(w http.ResponseWriter, r *http.Request, _ httprouter
 	httphelper.JSON(w, 200, ret)
 }
 
-func (c *HTTPAPI) RegisterHost(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (c *HTTPAPI) RegisterHost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	l := c.logger.New("fn", "RegisterHost")
 	h := &host.Host{}
 	if err := json.NewDecoder(r.Body).Decode(&h); err != nil {
@@ -162,7 +163,7 @@ func (c *HTTPAPI) RegisterHost(w http.ResponseWriter, r *http.Request, ps httpro
 	}
 }
 
-func (c *HTTPAPI) AddJobs(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (c *HTTPAPI) AddJobs(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	l := c.logger.New("fn", "AddJobs")
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -187,8 +188,9 @@ func (c *HTTPAPI) AddJobs(w http.ResponseWriter, r *http.Request, ps httprouter.
 	httphelper.JSON(w, 200, res)
 }
 
-func (c *HTTPAPI) RemoveJob(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (c *HTTPAPI) RemoveJob(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	l := c.logger.New("fn", "RemoveJob")
+	ps := httphelper.ParamsFromContext(ctx)
 	if err := c.Cluster.RemoveJobs(ps.ByName("host_id"), ps.ByName("job_id")); err != nil {
 		l.Error("remove_jobs error", "err", err)
 		httphelper.Error(w, err)
@@ -197,7 +199,7 @@ func (c *HTTPAPI) RemoveJob(w http.ResponseWriter, r *http.Request, ps httproute
 	w.WriteHeader(200)
 }
 
-func (c *HTTPAPI) StreamHostEvents(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (c *HTTPAPI) StreamHostEvents(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	l := c.logger.New("fn", "StreamHostEvents")
 	ch := make(chan host.HostEvent)
 	done := make(chan bool)
@@ -219,11 +221,11 @@ func (c *HTTPAPI) StreamHostEvents(w http.ResponseWriter, r *http.Request, ps ht
 }
 
 func (c *HTTPAPI) RegisterRoutes(r *httprouter.Router) error {
-	r.GET("/cluster/hosts", c.ListHosts)
-	r.PUT("/cluster/hosts/:id", c.RegisterHost)
-	r.POST("/cluster/jobs", c.AddJobs)
-	r.DELETE("/cluster/hosts/:host_id/jobs/:job_id", c.RemoveJob)
-	r.GET("/cluster/events", c.StreamHostEvents)
+	r.GET("/cluster/hosts", httphelper.WrapHandler(c.ListHosts))
+	r.PUT("/cluster/hosts/:id", httphelper.WrapHandler(c.RegisterHost))
+	r.POST("/cluster/jobs", httphelper.WrapHandler(c.AddJobs))
+	r.DELETE("/cluster/hosts/:host_id/jobs/:job_id", httphelper.WrapHandler(c.RemoveJob))
+	r.GET("/cluster/events", httphelper.WrapHandler(c.StreamHostEvents))
 	return nil
 }
 
